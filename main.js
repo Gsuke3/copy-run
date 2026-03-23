@@ -1172,15 +1172,34 @@ function isMobile() {
   return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 }
 // ======================================
-//            メインループ
+// 🧠 固定DTループ（最重要）
 // ======================================
 
-function loop() {
-  update();
+let lastTime = 0;
+let accumulator = 0;
+
+const FIXED_DT = 1 / 60; // 60FPS固定
+
+function loop(time) {
+
+  if (!lastTime) lastTime = time;
+
+  let delta = (time - lastTime) / 1000;
+  lastTime = time;
+
+  if (delta > 0.1) delta = 0.1;
+
+  accumulator += delta;
+
+  while (accumulator >= FIXED_DT) {
+    update();
+    accumulator -= FIXED_DT;
+  }
+
   draw();
+
   requestAnimationFrame(loop);
 }
-
 
 // ======================================
 //            開始
@@ -1188,7 +1207,7 @@ function loop() {
 buildObstacles();
 spawnGhosts();
 initTitleGhosts(); 
-loop();
+requestAnimationFrame(loop);
 // ======================================
 // 📱 スクロール制御（安全版）
 // ======================================
