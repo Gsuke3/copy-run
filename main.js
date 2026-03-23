@@ -7,17 +7,47 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-canvas.width = 960;
-canvas.height = 540;
+// ======================================
+// 🎯 アスペクト比固定（最重要）
+// ======================================
 
+const BASE_WIDTH = 960;
+const BASE_HEIGHT = 540;
+
+function resizeCanvas() {
+
+  const scale = Math.min(
+    window.innerWidth / BASE_WIDTH,
+    window.innerHeight / BASE_HEIGHT
+  );
+
+  canvas.style.width = BASE_WIDTH * scale + "px";
+  canvas.style.height = BASE_HEIGHT * scale + "px";
+
+}
+
+// 初期実行
+resizeCanvas();
+
+// リサイズ対応
+window.addEventListener("resize", resizeCanvas);
+
+// 内部解像度は固定（ここ重要）
+canvas.width = BASE_WIDTH;
+canvas.height = BASE_HEIGHT;
 
 // ======================================
 //            基本定数
 // ======================================
 let gameMode = "hard"; // "normal" or "hard"
 let isTouching = false;
+let touchStartX = 0;
+let leftTouchActive = false;
+let swipeDir = 0; // -1 左 / 1 右 / 0 停止
+let leftTouchId = null;
+let resetTimer = null;   // 📱 長押しリセット用
 let gameOverCount = 0;
-let bestCopies = 0;
+let bestCopies = Number(localStorage.getItem("bestCopies")) || 0;
 const WORLD_WIDTH = 1800;                 // ステージ全長
 const CENTER_X = WORLD_WIDTH / 2;         //半分に割ろう
 const GROUND_Y = 420;                     // 地面の高さ
@@ -52,15 +82,116 @@ window.addEventListener("keydown", (e) => {
   // ======================================
   if (gameState === "title") {
   startFromTitle(); // 何押しても即スタート
-}
+  }
+  // ==========================
+  // 🔙 タイトルに戻る（R+T）
+  // ==========================
+  if (keys["KeyR"] && keys["KeyT"]) {
+
+    gameState = "title";
+
+    runs = [];
+    ghosts = [];
+    currentRun = [];
+
+    player = createPlayer();
+
+  }
 
 });
 
 window.addEventListener("keyup", (e) => {
   keys[e.code] = false;
 });
+// ======================================
+// 📱 タッチ開始
+// ======================================
+window.addEventListener("touchstart", (e) => {
 
+  e.preventDefault();
 
+  // ======================================
+  // 🎮 タイトルならスタート
+  // ======================================
+  if (gameState === "title") {
+    startFromTitle();
+    return;
+  }
+
+  for (let i = 0; i < e.changedTouches.length; i++) {
+
+   
+     
+        const touch = e.changedTouches[i];
+
+      const rect = canvas.getBoundingClientRect();
+
+      // ==========================
+      // 👇 スケール補正（これが本体）
+      // ==========================
+      const scaleX = canvas.width / canvas.clientWidth;
+      const scaleY = canvas.height / canvas.clientHeight;
+
+      const x = (touch.clientX - rect.left) * scaleX;
+      const y = (touch.clientY - rect.top) * scaleY;
+
+      const half = canvas.width / 2;
+    // ==========================
+    // 👇 canvas外タッチは無視
+    // ==========================
+    if (x < 0 || x > canvas.width || y < 0 || y > canvas.height) {
+      continue;
+    }
+
+    // ==========================
+    // 左側 → 移動専用
+    // ==========================
+    if (x < half) {
+
+      if (leftTouchId !== null) continue;
+
+      leftTouchActive = true;
+      touchStartX = x;
+      swipeDir = 0;
+      leftTouchId = touch.identifier;
+
+      continue; // 👈 これが超重要（右処理に絶対行かせない）
+      
+    }
+
+    // ==========================
+    // 右側 → ジャンプ専用
+    // ==========================
+    keys["Space"] = true;
+
+    setTimeout(() => {
+      keys["Space"] = false;
+    }, 30);
+
+  }
+
+});
+// ======================================
+// 📱 タッチ終了（完全分離版）
+// ======================================
+window.addEventListener("touchend", (e) => {
+
+  e.preventDefault();
+
+  for (let i = 0; i < e.changedTouches.length; i++) {
+
+    const t = e.changedTouches[i];
+
+    // 👇 左指だけ見る
+    if (t.identifier === leftTouchId) {
+      leftTouchId = null;
+      leftTouchActive = false;
+      swipeDir = 0;
+    }
+
+  }
+
+});
 // ======================================
 //            ステージデータ
 // ======================================
@@ -394,15 +525,19 @@ function updatePlayer() {
 
   player.prevX = player.x;
 
-  // ======================================
+ // ======================================
   //            左右移動
   // ======================================
 
   player.vx = 0;
 
+  // PC操作（そのまま残す）
   if (keys["ArrowLeft"] || keys["KeyA"])  player.vx = -MOVE_SPEED;
   if (keys["ArrowRight"] || keys["KeyD"]) player.vx = MOVE_SPEED;
 
+  // スマホ操作（追加）
+  if (swipeDir === -1) player.vx = -MOVE_SPEED;
+  if (swipeDir === 1)  player.vx = MOVE_SPEED;
   // ======================================
   //            ジャンプ
   // ======================================
@@ -558,7 +693,8 @@ function roundClear() {
 
   if (runs.length > bestCopies) {
   bestCopies = runs.length;
-  }
+  localStorage.setItem("bestCopies", bestCopies);
+}
 }
 
 
@@ -866,6 +1002,17 @@ function drawTitle() {
     canvas.width / 2,
     170 + pulse
   );
+  // ==========================
+  // 🏆 BEST表示
+  // ==========================
+  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  ctx.font = "20px sans-serif";
+
+  ctx.fillText(
+    `BEST ${bestCopies}`,
+    canvas.width / 2,
+    210
+  );
 
   // ======================================
   //        下ライン（スタイリッシュ線）
@@ -926,6 +1073,13 @@ function drawTitle() {
     canvas.width / 2,
     485
   );
+
+  // RESET
+  ctx.fillText(
+    "R + T         - COPY RESET",
+    canvas.width / 2,
+    510
+  );
   updateTitleGhosts();
   drawTitleGhosts();
 }
@@ -934,6 +1088,27 @@ function drawTitle() {
 // ======================================
 
 function draw() {
+  // ==========================
+  // 📱 縦持ちなら案内表示
+  // ==========================
+  if (isPortrait()) {
+
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.font = "20px sans-serif";
+
+    ctx.fillText(
+      "スマホを横にしてください",
+      canvas.width / 2,
+      canvas.height / 2
+    );
+
+    return;
+  }
+
   if (gameState === "title") {
   drawTitle();
   return;
@@ -947,6 +1122,30 @@ function draw() {
   drawGhosts();
   drawPlayer();
   drawUI();
+  // ==========================
+  // 📱 左スワイプガイド
+  // ==========================
+  if (isMobile()) {
+
+    ctx.fillStyle = "rgba(255,255,255,0.15)";
+    ctx.font = "56px sans-serif";
+    ctx.textAlign = "left";
+
+    ctx.fillText("  ←    →", 30, canvas.height - 30);
+
+  }
+  // ==========================
+  // 📱 右ジャンプガイド
+  // ==========================
+  if (isMobile()) {
+
+    ctx.fillStyle = "rgba(255,255,255,0.15)";
+    ctx.font = "50px sans-serif"; // 👈 約3倍
+    ctx.textAlign = "right";
+
+    ctx.fillText("JUMP", canvas.width - 30, canvas.height - 30);
+
+  }
 }
 //  何かの関数
 function startFromTitle() {
@@ -959,6 +1158,18 @@ function startFromTitle() {
 
   player = createPlayer();
   spawnGhosts();
+}
+// ======================================
+// 📱 スマホ向きチェック
+// ======================================
+function isPortrait() {
+  return window.innerHeight > window.innerWidth;
+}
+// ======================================
+// 📱 スマホ判定
+// ======================================
+function isMobile() {
+  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 }
 // ======================================
 //            メインループ
@@ -978,3 +1189,88 @@ buildObstacles();
 spawnGhosts();
 initTitleGhosts(); 
 loop();
+// ======================================
+// 📱 スクロール制御（安全版）
+// ======================================
+
+// ① window側は一旦無効化（様子見）
+window.addEventListener("touchmove", function(e) {
+  // e.preventDefault();
+}, { passive: false });
+
+// ② canvas内だけスクロール禁止（本命）
+canvas.addEventListener("touchmove", function(e) {
+  e.preventDefault();
+}, { passive: false });
+// ======================================
+// 📱 スワイプ方向判定（完全版）
+// ======================================
+window.addEventListener("touchmove", (e) => {
+
+  e.preventDefault();
+
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / canvas.clientWidth;
+
+  // ==========================
+  // 👇 左指が無いなら再取得
+  // ==========================
+  if (leftTouchId === null) {
+
+    for (let i = 0; i < e.touches.length; i++) {
+
+      const t = e.touches[i];
+      const x = (t.clientX - rect.left) * scaleX;
+
+      if (x >= 0 && x < canvas.width / 2) {
+        leftTouchId = t.identifier;
+        leftTouchActive = true;
+        touchStartX = x;
+        break;
+      }
+
+    }
+
+  }
+
+  if (!leftTouchActive) return;
+
+  // ==========================
+  // 👇 左指を特定
+  // ==========================
+  let touch = null;
+
+  for (let i = 0; i < e.touches.length; i++) {
+    if (e.touches[i].identifier === leftTouchId) {
+      touch = e.touches[i];
+      break;
+    }
+  }
+
+  // 左指が見つからなかったらリセット
+  if (!touch) {
+    leftTouchActive = false;
+    swipeDir = 0;
+    leftTouchId = null;
+    return;
+  }
+
+  // ==========================
+  // 👇 座標補正（ここ重要）
+  // ==========================
+  const currentX = (touch.clientX - rect.left) * scaleX;
+  const dx = currentX - touchStartX;
+
+  // ==========================
+  // スワイプ方向決定
+  // ==========================
+  if (dx > 10 && swipeDir !== 1) {
+    swipeDir = 1;
+  } else if (dx < -10 && swipeDir !== -1) {
+    swipeDir = -1;
+  }
+
+  // 👇 毎フレーム更新（ぬるぬる化）
+  touchStartX = currentX;
+
+});

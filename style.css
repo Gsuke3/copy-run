@@ -1,7 +1,25 @@
+/* ======================================
+   📱 全体サイズ固定（これを一番上に追加）
+====================================== */
+html, body {
+  width: 100%;
+  height: 100%;
+}
+
 body{
   margin:0;
   overflow:hidden;
   background:#111;
+
+  /* 👇 中央寄せ（追加） */
+  display:flex;
+  justify-content:center;
+  align-items:center;
+
+  -webkit-user-select:none;
+  user-select:none;
+  -webkit-touch-callout:none;
+  -webkit-tap-highlight-color:transparent;
 }
 
 canvas{
