@@ -6,7 +6,64 @@
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
+// ======================================
+//            オーディオ
+// ======================================
+const audioCtx = new AudioContext();
+function hat(){                           //hat
 
+  const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate*0.05, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+
+  for(let i=0;i<data.length;i++){
+    data[i] = Math.random()*2-1;
+  }
+
+  const src = audioCtx.createBufferSource();
+  src.buffer = buffer;
+
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = "highpass";
+  filter.frequency.value = 7000;
+
+  const g = audioCtx.createGain();
+
+  const now = audioCtx.currentTime;
+
+  g.gain.setValueAtTime(0.0001,now);
+  g.gain.exponentialRampToValueAtTime(0.25,now+0.002);
+  g.gain.exponentialRampToValueAtTime(0.0001,now+0.05);
+
+  src.connect(filter);
+  filter.connect(g);
+  g.connect(audioCtx.destination);
+
+  src.start(now);
+}
+function playTone(freq){                 //他の音？
+
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+
+  const now = audioCtx.currentTime;
+
+  o.type = "square";
+  o.frequency.value = freq;
+
+  g.gain.setValueAtTime(0.0001, now);
+
+  // アタック（なめらかに上げる）
+  g.gain.exponentialRampToValueAtTime(0.2, now + 0.008);
+
+  // リリース（なめらかに消える）
+  g.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+
+    o.connect(g);
+    g.connect(audioCtx.destination);
+
+    o.start(now);
+    o.stop(now + 0.2);
+  }
 // ======================================
 // 🎯 アスペクト比固定（最重要）
 // ======================================
@@ -272,6 +329,7 @@ class Ghost {
   constructor(run, index) {
     this.run = run;                       // 再生元フレーム配列
     this.index = index;                   // 何体目か
+    this.noteIndex = index % 6;
     this.frame = 0;                       // 再生中フレーム
     this.visible = true;                  // 描画するか
     this.finished = false;                // ゴール済み扱いか
@@ -298,6 +356,24 @@ class Ghost {
     }
 
     const source = this.run[this.frame];             // 元の記録状態
+    
+    const prev = this.run[this.frame - 1];
+
+      if (
+        source.note !== null &&
+        source.note !== undefined &&
+        (!prev || prev.note !== source.note)
+      ) {
+        const scale = [
+          261.63, // ド
+          311.13, // ミ♭ ←コイツがダーク感の核
+          349.23, // ファ
+          392.00, // ソ
+          466.16, // シ♭
+          523.25  // 上ド
+        ];
+        playTone(scale[this.noteIndex]);
+      }
 
     // ======================================
     //      反対向き再生（右 → 左へ来る）
@@ -543,6 +619,10 @@ function updatePlayer() {
   // ======================================
 
   if (consumeJumpPress()) {
+    hat();
+    const jumpNote = Math.floor(Math.random() * 5);
+    player.jumpNote = jumpNote;
+
     if (player.onGround || player.jumpCount < MAX_JUMPS) {
       player.vy = JUMP_POWER;
       player.onGround = false;
@@ -644,7 +724,8 @@ function recordCurrentFrame() {
     w: player.w,
     h: player.h,
     visible: true,
-    finished: player.finished
+    finished: player.finished,
+    note: player.jumpNote ?? null
   });
 }
 
